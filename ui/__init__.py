@@ -5,7 +5,7 @@ from .components.switch import Switch
 from .components.slider import Slider
 from .components.frame import Frame
 from .components.textbox import Textbox
-
+from .components.entry import Entry
 __all__ = [
     "Checkbox",
     "Switch",
