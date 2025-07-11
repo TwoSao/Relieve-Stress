@@ -1,268 +1,355 @@
-import json
 import customtkinter as ctk
-from ui.components.frame import Frame
+from ui.views.base_view import BaseView
+from ui.widgets.enhanced_button import EnhancedButton
+from ui.widgets.note_card import NoteCard
 from ui.components.label import Label
-from ui.components.buttons import Button
-from ui.style import CURRENT_THEME  # Добавляем импорт CURRENT_THEME
+from ui.components.frame import Frame
+from ui.style import get_color, get_font
+from core.services.note_service import NoteService
+from ui.animations.transitions import AnimationManager
 
-class ManageNotes(Frame):
-    def __init__(self, master, notes_file="data/notes.json", on_update=None, on_add_note=None, **kwargs):
-        super().__init__(master, **kwargs)
-        self.notes_file = notes_file
-        self.notes = self.load_notes()
-        self.filtered_notes = []
+class ManageNotes(BaseView):
+    def __init__(self, master, on_update=None, on_add_note=None, **kwargs):
+        self.note_service = NoteService()
         self.on_update = on_update
         self.on_add_note = on_add_note
-        self.mode = None  # 'delete' или 'edit'
+        self.selected_category = None
+        self.current_edit_note_id = None
+        super().__init__(master, **kwargs)
 
-        # Устанавливаем цвет фона согласно текущей теме
-        self.configure(fg_color=CURRENT_THEME["COLOR_FRAME_BG"])
+    def setup_ui(self):
+        self.configure(fg_color=get_color("COLOR_FRAME_BG"))
 
-        # Верхняя панель с кнопками
-        self.mode_frame = Frame(self, fg_color=CURRENT_THEME["COLOR_FRAME_BG"])
-        self.mode_frame.pack(fill="x", pady=5)
+        # Заголовок
+        self.title_label = Label(
+            self,
+            text="🛠️ Управление заметками",
+            font=get_font("FONT_TITLE"),
+            text_color=get_color("COLOR_TEXT")
+        )
+        self.title_label.pack(pady=20)
 
-        self.btn_add_note = Button(
-            self.mode_frame,
+        # Панель действий
+        self.actions_frame = Frame(self, fg_color="transparent")
+        self.actions_frame.pack(fill="x", padx=20, pady=10)
+
+        self.add_btn = EnhancedButton(
+            self.actions_frame,
             text="➕ Добавить",
             command=self.open_add_note,
-            fg_color=CURRENT_THEME["COLOR_BUTTON_BG"],
-            text_color=CURRENT_THEME["COLOR_TEXT"]
+            fg_color=get_color("COLOR_SUCCESS"),
+            hover_animation=True
         )
-        self.btn_add_note.pack(side="left", padx=5)
+        self.add_btn.pack(side="left", padx=5)
 
-        self.btn_delete_mode = Button(
-            self.mode_frame,
-            text="🗑️ Удалить",
-            command=self.set_delete_mode,
-            fg_color=CURRENT_THEME["COLOR_BUTTON_BG"],
-            text_color=CURRENT_THEME["COLOR_TEXT"]
+        # Панель категорий
+        self.category_frame = Frame(self, fg_color="transparent")
+        self.category_frame.pack(fill="x", padx=20, pady=10)
+
+        self.category_label = Label(
+            self.category_frame,
+            text="Выберите категорию:",
+            font=get_font("FONT_SUBTITLE"),
+            text_color=get_color("COLOR_TEXT")
         )
-        self.btn_delete_mode.pack(side="left", padx=5)
+        self.category_label.pack(anchor="w", pady=(0, 10))
 
-        self.btn_edit_mode = Button(
-            self.mode_frame,
-            text="✏️ Изменить",
-            command=self.set_edit_mode,
-            fg_color=CURRENT_THEME["COLOR_BUTTON_BG"],
-            text_color=CURRENT_THEME["COLOR_TEXT"]
-        )
-        self.btn_edit_mode.pack(side="left", padx=5)
+        self.category_buttons_frame = Frame(self.category_frame, fg_color="transparent")
+        self.category_buttons_frame.pack(fill="x")
 
-        # Панель выбора категории
-        self.category_frame = Frame(self, fg_color=CURRENT_THEME["COLOR_FRAME_BG"])
-        self.category_frame.pack(fill="x", pady=5)
-
-        self.categories = ["Поддержка", "Мотивация", "Отвлечение"]
-        self.selected_category = None
-
-        for cat in self.categories:
-            btn = Button(
-                self.category_frame,
+        categories = self.note_service.get_categories()
+        self.category_buttons = []
+        
+        for cat in categories:
+            btn = EnhancedButton(
+                self.category_buttons_frame,
                 text=cat,
                 command=lambda c=cat: self.select_category(c),
-                fg_color=CURRENT_THEME["COLOR_BUTTON_BG"],
-                text_color=CURRENT_THEME["COLOR_TEXT"]
+                fg_color=get_color("COLOR_BUTTON_BG"),
+                hover_animation=True
             )
-            btn.pack(side="left", padx=5)
+            btn.pack(side="left", padx=5, expand=True, fill="x")
+            self.category_buttons.append(btn)
 
-        # Панель списка заметок
-        self.notes_list_frame = Frame(self, fg_color=CURRENT_THEME["COLOR_FRAME_BG"])
-        self.notes_list_frame.pack(fill="both", expand=True, pady=10)
-
-        # Редактирование текста
-        self.edit_frame = Frame(self, fg_color=CURRENT_THEME["COLOR_FRAME_BG"])
-        self.edit_label = Label(
-            self.edit_frame,
-            text="Редактировать заметку:",
-            font=CURRENT_THEME["FONT_NORMAL"],
-            text_color=CURRENT_THEME["COLOR_TEXT"]
+        # Область прокрутки для заметок
+        self.scrollable_frame = ctk.CTkScrollableFrame(
+            self,
+            fg_color=get_color("COLOR_BG"),
+            corner_radius=12
         )
-        self.edit_label.pack(pady=5)
+        self.scrollable_frame.pack(fill="both", expand=True, padx=20, pady=20)
 
-        self.textbox = ctk.CTkTextbox(
-            self.edit_frame,
-            height=100,
-            fg_color=CURRENT_THEME["COLOR_FRAME_BG"],
-            text_color=CURRENT_THEME["COLOR_TEXT"]
+        # Область редактирования
+        self.edit_frame = Frame(
+            self,
+            fg_color=get_color("COLOR_FRAME_BG"),
+            corner_radius=12,
+            border_width=2,
+            border_color=get_color("COLOR_INFO")
         )
-        self.textbox.pack(padx=10, pady=5, fill="both", expand=True)
-
-        self.save_edit_button = Button(
+        
+        self.edit_title = Label(
             self.edit_frame,
-            text="Сохранить изменения",
+            text="✏️ Редактирование заметки",
+            font=get_font("FONT_SUBTITLE"),
+            text_color=get_color("COLOR_TEXT")
+        )
+        self.edit_title.pack(pady=15)
+        
+        self.edit_textbox = ctk.CTkTextbox(
+            self.edit_frame,
+            height=120,
+            fg_color=get_color("COLOR_INPUT_BG"),
+            text_color=get_color("COLOR_TEXT"),
+            border_color=get_color("COLOR_INPUT_BORDER"),
+            border_width=2,
+            font=get_font("FONT_NORMAL"),
+            corner_radius=8
+        )
+        self.edit_textbox.pack(padx=20, pady=10, fill="both", expand=True)
+        
+        self.edit_buttons_frame = Frame(self.edit_frame, fg_color="transparent")
+        self.edit_buttons_frame.pack(fill="x", padx=20, pady=15)
+        
+        self.save_edit_btn = EnhancedButton(
+            self.edit_buttons_frame,
+            text="✓ Сохранить",
             command=self.save_edit,
-            fg_color=CURRENT_THEME["COLOR_BUTTON_BG"],
-            text_color=CURRENT_THEME["COLOR_TEXT"]
+            fg_color=get_color("COLOR_SUCCESS"),
+            hover_animation=True
         )
-        self.save_edit_button.pack(pady=10)
+        self.save_edit_btn.pack(side="right", padx=5)
+        
+        self.cancel_edit_btn = EnhancedButton(
+            self.edit_buttons_frame,
+            text="✖ Отмена",
+            command=self.cancel_edit,
+            fg_color=get_color("COLOR_WARNING"),
+            hover_animation=True
+        )
+        self.cancel_edit_btn.pack(side="right", padx=5)
 
         # Статус
         self.status_label = Label(
             self,
-            text="",
-            font=CURRENT_THEME["FONT_NORMAL"],
-            text_color=CURRENT_THEME["COLOR_TEXT"]
+            text="Выберите категорию для просмотра заметок",
+            font=get_font("FONT_NORMAL"),
+            text_color=get_color("COLOR_TEXT_SECONDARY")
         )
-        self.status_label.pack(pady=5)
-
-        self.current_edit_index = None
-
-    def load_notes(self):
-        try:
-            with open(self.notes_file, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            return []
-
-    def save_notes(self):
-        with open(self.notes_file, "w", encoding="utf-8") as f:
-            json.dump(self.notes, f, ensure_ascii=False, indent=4)
-
-    def clear_notes_list(self):
-        for widget in self.notes_list_frame.winfo_children():
-            widget.destroy()
-        self.edit_frame.pack_forget()
-        self.status_label.configure(text="")
-
-    def set_delete_mode(self):
-        self.mode = "delete"
-        self.status_label.configure(
-            text="Режим удаления: выберите категорию и заметку для удаления.",
-            text_color=CURRENT_THEME["COLOR_TEXT"]
-        )
-        self.edit_frame.pack_forget()
-        self.clear_notes_list()
-        self.reset_mode_buttons()
-        self.btn_delete_mode.configure(fg_color="#d9534f")
-        if self.selected_category:
-            self.show_notes_list(self.selected_category)
-
-    def set_edit_mode(self):
-        self.mode = "edit"
-        self.status_label.configure(
-            text="Режим редактирования: выберите категорию и заметку для редактирования.",
-            text_color=CURRENT_THEME["COLOR_TEXT"]
-        )
-        self.edit_frame.pack_forget()
-        self.clear_notes_list()
-        self.reset_mode_buttons()
-        self.btn_edit_mode.configure(fg_color="#5bc0de")
-        if self.selected_category:
-            self.show_notes_list(self.selected_category)
+        self.status_label.pack(pady=10)
 
     def select_category(self, category):
         self.selected_category = category
+        
+        # Обновляем кнопки категорий
+        for btn in self.category_buttons:
+            is_active = btn.cget("text") == category
+            btn.configure(
+                fg_color=get_color("COLOR_ACCENT") if is_active else get_color("COLOR_BUTTON_BG")
+            )
+            if is_active:
+                AnimationManager.scale_in(btn, duration=0.2)
+        
+        self.show_notes_for_category(category)
         self.status_label.configure(
-            text=f"Выбрана категория: {category}",
-            text_color=CURRENT_THEME["COLOR_TEXT"]
+            text=f"Категория: {category}",
+            text_color=get_color("COLOR_INFO")
         )
-        self.edit_frame.pack_forget()
-        self.clear_notes_list()
-        self.show_notes_list(category)
 
-    def show_notes_list(self, category):
-        self.filtered_notes = [note for note in self.notes if note.get("category") == category]
-
-        if not self.filtered_notes:
-            self.status_label.configure(
-                text="Заметок в этой категории нет.",
-                text_color=CURRENT_THEME["COLOR_TEXT"]
+    def show_notes_for_category(self, category):
+        # Очищаем текущие заметки
+        for widget in self.scrollable_frame.winfo_children():
+            widget.destroy()
+        
+        notes = self.note_service.get_notes(category)
+        
+        if not notes:
+            no_notes_label = Label(
+                self.scrollable_frame,
+                text=f"Нет заметок в категории '{category}'",
+                font=get_font("FONT_NORMAL"),
+                text_color=get_color("COLOR_TEXT_SECONDARY")
             )
+            no_notes_label.pack(pady=50)
             return
-
-        for idx, note in enumerate(self.filtered_notes):
-            btn = Button(
-                self.notes_list_frame,
-                text=note["text"][:40] + ("..." if len(note["text"]) > 40 else ""),
-                command=lambda i=idx: self.note_action(i),
-                fg_color=CURRENT_THEME["COLOR_BUTTON_BG"],
-                text_color=CURRENT_THEME["COLOR_TEXT"]
+        
+        # Создаем карточки заметок с кнопками управления
+        for note in notes:
+            note_frame = Frame(
+                self.scrollable_frame,
+                fg_color=get_color("COLOR_FRAME_BG"),
+                corner_radius=8,
+                border_width=1,
+                border_color=get_color("COLOR_DIVIDER")
             )
-            btn.pack(fill="x", padx=10, pady=3)
-
-    def note_action(self, index):
-        if self.mode == "delete":
-            real_index = self.notes.index(self.filtered_notes[index])
-            del self.notes[real_index]
-            self.save_notes()
-            self.status_label.configure(
-                text="Заметка удалена.",
-                text_color=CURRENT_THEME["COLOR_TEXT"]
+            note_frame.pack(fill="x", pady=5, padx=10)
+            
+            # Текст заметки
+            note_text = Label(
+                note_frame,
+                text=note.text,
+                font=get_font("FONT_NORMAL"),
+                text_color=get_color("COLOR_TEXT"),
+                wraplength=400,
+                justify="left"
             )
-            self.clear_notes_list()
-            self.show_notes_list(self.selected_category)
-            if self.on_update:
-                self.on_update()
-
-        elif self.mode == "edit":
-            self.current_edit_index = self.notes.index(self.filtered_notes[index])
-            note = self.notes[self.current_edit_index]
-            self.textbox.delete("0.0", "end")
-            self.textbox.insert("0.0", note["text"])
-            self.edit_frame.pack(fill="both", padx=10, pady=10)
-            self.status_label.configure(
-                text="Редактирование заметки. Внесите изменения и нажмите сохранить.",
-                text_color=CURRENT_THEME["COLOR_TEXT"]
+            note_text.pack(pady=10, padx=15, fill="x")
+            
+            # Кнопки управления
+            buttons_frame = Frame(note_frame, fg_color="transparent")
+            buttons_frame.pack(fill="x", padx=10, pady=(0, 10))
+            
+            edit_btn = EnhancedButton(
+                buttons_frame,
+                text="✏️",
+                width=30,
+                height=30,
+                command=lambda n=note: self.start_edit(n),
+                fg_color=get_color("COLOR_INFO"),
+                hover_animation=True
             )
+            edit_btn.pack(side="left", padx=2)
+            
+            delete_btn = EnhancedButton(
+                buttons_frame,
+                text="🗑️",
+                width=30,
+                height=30,
+                command=lambda n=note: self.delete_note(n),
+                fg_color=get_color("COLOR_ERROR"),
+                hover_animation=True
+            )
+            delete_btn.pack(side="right", padx=2)
+            
+            favorite_btn = EnhancedButton(
+                buttons_frame,
+                text="★" if note.is_favorite else "☆",
+                width=30,
+                height=30,
+                command=lambda n=note: self.toggle_favorite(n),
+                fg_color=get_color("COLOR_WARNING") if note.is_favorite else get_color("COLOR_BUTTON_BG"),
+                hover_animation=True
+            )
+            favorite_btn.pack(side="right", padx=2)
+
+    def start_edit(self, note):
+        self.current_edit_note_id = note.id
+        self.edit_textbox.delete("0.0", "end")
+        self.edit_textbox.insert("0.0", note.text)
+        self.edit_frame.pack(fill="x", padx=20, pady=10)
+        AnimationManager.slide_in(self.edit_frame, direction="right", duration=0.3)
+        
+        self.status_label.configure(
+            text="Редактирование заметки...",
+            text_color=get_color("COLOR_INFO")
+        )
 
     def save_edit(self):
-        new_text = self.textbox.get("0.0", "end").strip()
+        if not self.current_edit_note_id:
+            return
+            
+        new_text = self.edit_textbox.get("0.0", "end").strip()
         if not new_text:
             self.status_label.configure(
-                text="Заметка не может быть пустой!",
-                text_color=CURRENT_THEME["COLOR_TEXT"]
+                text="⚠️ Заметка не может быть пустой!",
+                text_color=get_color("COLOR_ERROR")
             )
             return
-        self.notes[self.current_edit_index]["text"] = new_text
-        self.save_notes()
+        
+        # Обновляем заметку через сервис
+        notes = self.note_service.get_notes()
+        for note in notes:
+            if note.id == self.current_edit_note_id:
+                note.text = new_text
+                break
+        
+        self.note_service.save_notes()
+        self.cancel_edit()
+        self.show_notes_for_category(self.selected_category)
+        
         self.status_label.configure(
-            text="Заметка успешно обновлена.",
-            text_color=CURRENT_THEME["COLOR_TEXT"]
+            text="✓ Заметка успешно обновлена!",
+            text_color=get_color("COLOR_SUCCESS")
         )
-        self.edit_frame.pack_forget()
-        self.clear_notes_list()
-        self.show_notes_list(self.selected_category)
+        
         if self.on_update:
             self.on_update()
 
-    def reset_mode_buttons(self):
-        self.btn_delete_mode.configure(fg_color=CURRENT_THEME["COLOR_BUTTON_BG"])
-        self.btn_edit_mode.configure(fg_color=CURRENT_THEME["COLOR_BUTTON_BG"])
+    def cancel_edit(self):
+        self.edit_frame.pack_forget()
+        self.current_edit_note_id = None
+        self.status_label.configure(
+            text=f"Категория: {self.selected_category}" if self.selected_category else "",
+            text_color=get_color("COLOR_TEXT_SECONDARY")
+        )
+
+    def delete_note(self, note):
+        if self.note_service.delete_note(note.id):
+            self.show_notes_for_category(self.selected_category)
+            self.status_label.configure(
+                text="✓ Заметка удалена",
+                text_color=get_color("COLOR_SUCCESS")
+            )
+            if self.on_update:
+                self.on_update()
+
+    def toggle_favorite(self, note):
+        if self.note_service.toggle_favorite(note.id):
+            self.show_notes_for_category(self.selected_category)
+            status_text = "★ Добавлено в избранное" if not note.is_favorite else "☆ Убрано из избранного"
+            self.status_label.configure(
+                text=status_text,
+                text_color=get_color("COLOR_INFO")
+            )
 
     def open_add_note(self):
         if self.on_add_note:
             self.on_add_note()
 
     def refresh(self):
-        self.notes = self.load_notes()
-        self.clear_notes_list()
-
-        # Показать заново, если категория уже выбрана
+        self.note_service.load_notes()
         if self.selected_category:
-            self.show_notes_list(self.selected_category)
+            self.show_notes_for_category(self.selected_category)
 
     def update_theme(self):
-        """Метод для обновления цветов при смене темы"""
-        self.configure(fg_color=CURRENT_THEME["COLOR_FRAME_BG"])
-        self.mode_frame.configure(fg_color=CURRENT_THEME["COLOR_FRAME_BG"])
-        self.category_frame.configure(fg_color=CURRENT_THEME["COLOR_FRAME_BG"])
-        self.notes_list_frame.configure(fg_color=CURRENT_THEME["COLOR_FRAME_BG"])
-        self.edit_frame.configure(fg_color=CURRENT_THEME["COLOR_FRAME_BG"])
-
-        self.edit_label.configure(text_color=CURRENT_THEME["COLOR_TEXT"])
-        self.status_label.configure(text_color=CURRENT_THEME["COLOR_TEXT"])
-
-        self.textbox.configure(
-            fg_color=CURRENT_THEME["COLOR_FRAME_BG"],
-            text_color=CURRENT_THEME["COLOR_TEXT"]
+        self.configure(fg_color=get_color("COLOR_FRAME_BG"))
+        
+        self.title_label.configure(
+            text_color=get_color("COLOR_TEXT"),
+            font=get_font("FONT_TITLE")
         )
-
-        for btn in [
-                       self.btn_add_note, self.btn_delete_mode, self.btn_edit_mode,
-                       self.save_edit_button
-                   ] + self.category_frame.winfo_children():
-            btn.configure(
-                fg_color=CURRENT_THEME["COLOR_BUTTON_BG"],
-                text_color=CURRENT_THEME["COLOR_TEXT"]
-            )
+        
+        self.category_label.configure(
+            text_color=get_color("COLOR_TEXT"),
+            font=get_font("FONT_SUBTITLE")
+        )
+        
+        self.scrollable_frame.configure(fg_color=get_color("COLOR_BG"))
+        
+        self.edit_frame.configure(
+            fg_color=get_color("COLOR_FRAME_BG"),
+            border_color=get_color("COLOR_INFO")
+        )
+        
+        self.edit_title.configure(
+            text_color=get_color("COLOR_TEXT"),
+            font=get_font("FONT_SUBTITLE")
+        )
+        
+        self.edit_textbox.configure(
+            fg_color=get_color("COLOR_INPUT_BG"),
+            text_color=get_color("COLOR_TEXT"),
+            border_color=get_color("COLOR_INPUT_BORDER")
+        )
+        
+        self.status_label.configure(
+            text_color=get_color("COLOR_TEXT_SECONDARY"),
+            font=get_font("FONT_NORMAL")
+        )
+        
+        # Обновляем кнопки
+        self.add_btn.update_theme()
+        for btn in self.category_buttons:
+            btn.update_theme()
+        self.save_edit_btn.update_theme()
+        self.cancel_edit_btn.update_theme()

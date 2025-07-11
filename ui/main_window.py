@@ -6,23 +6,38 @@ from ui.buttons.notes.notes_view import NotesView
 from ui.buttons.notes.add_notes import Add_Note
 from ui.buttons.notes.manage_notes import ManageNotes
 from ui.style import set_theme, get_color, get_font
-from ui.assistant.view import AssistantView
-from ui.assistant.logic import AssistantLogic
+
+
+# Новые импорты
+from ui.themes.theme_manager import ThemeManager
+from ui.animations.transitions import AnimationManager
+from ui.widgets.enhanced_button import EnhancedButton
+from core.services.note_service import NoteService
+from config.settings import SettingsManager
 
 class MainWindow(ctk.CTk):
     def __init__(self):
         super().__init__()
-
-
-
+        
+        # Инициализация сервисов
+        self.settings_manager = SettingsManager()
+        self.note_service = NoteService()
+        self.animation_manager = AnimationManager()
+        
         # Инициализация темы
-        self.current_theme_name = "light"
+        self.current_theme_name = self.settings_manager.get('theme', 'light')
         set_theme(self.current_theme_name)
+        ThemeManager.add_observer(self.on_theme_changed)
+        
+        # Принудительно применяем тему после создания всех виджетов
+        self.after(100, self.on_theme_changed)  # Задержка для корректной инициализации
 
 
         # Настройка главного окна
         self.title("Relieve Stress")
-        self.geometry("1200x960")
+        width = self.settings_manager.get('window_width', 1200)
+        height = self.settings_manager.get('window_height', 960)
+        self.geometry(f"{width}x{height}")
         self.minsize(700, 850)
         self.configure(fg_color=get_color("COLOR_BG"))
         self.iconbitmap(self,"assets/icon.ico")
@@ -34,12 +49,7 @@ class MainWindow(ctk.CTk):
 
         # Показываем начальное представление
         self.show_notes()
-        # Инициализация ассистента
-        self.assistant_logic = AssistantLogic(api_key="API_KEY")
-        self.assistant_view = AssistantView(
-            self.content_frame,
-            on_send_message=self.assistant_logic.get_response
-        )
+
         # Центрируем окно
         self.center_window()
 
@@ -63,44 +73,51 @@ class MainWindow(ctk.CTk):
         self.buttons_frame.pack(fill="x", padx=20, pady=(0, 15))
 
         # Кнопки навигации
-        self.btn_show_notes = Button(
+        self.btn_show_notes = EnhancedButton(
             self.buttons_frame,
             text="Показать заметки",
-            command=self.show_notes
+            command=self.show_notes,
+            hover_animation=True
         )
         self.btn_show_notes.pack(side="left", padx=10, pady=5)
 
-        self.btn_manage_notes = Button(
+        self.btn_manage_notes = EnhancedButton(
             self.buttons_frame,
             text="Управление заметками",
-            command=self.show_manage_notes
+            command=self.show_manage_notes,
+            hover_animation=True
         )
         self.btn_manage_notes.pack(side="left", padx=10, pady=5)
 
+        # Кнопка колеса эмоций
+        self.btn_emotion_wheel = EnhancedButton(
+            self.buttons_frame,
+            text="Колесо эмоций",
+            command=self.show_emotion_wheel,
+            hover_animation=True
+        )
+        self.btn_emotion_wheel.pack(side="left", padx=10, pady=5)
+
         # Кнопка смены темы
-        self.theme_toggle_btn = Button(
+        self.theme_toggle_btn = EnhancedButton(
             self.buttons_frame,
             text="🌙" if self.current_theme_name == "light" else "☀️",
             command=self.toggle_theme,
-            width=40
+            width=40,
+            hover_animation=True
         )
         self.theme_toggle_btn.pack(side="left", padx=10, pady=5)
 
         # Кнопка выхода
-        self.exit_button = Button(
+        self.exit_button = EnhancedButton(
             self.buttons_frame,
             text="Выход",
-            command=self.destroy
+            command=self.on_exit,
+            hover_animation=True
         )
         self.exit_button.pack(side="right", padx=10, pady=5)
 
-        self.btn_assistant = Button(
-            self.buttons_frame,
-            text="AI",
-            command=self.show_assistant,
-            fg_color=get_color("COLOR_ACCENT")
-        )
-        self.btn_assistant.pack(side="left", padx=10, pady=5)
+
 
     # Основная область контента (теперь создается до представлений)
         self.content_frame = Frame(
@@ -112,19 +129,12 @@ class MainWindow(ctk.CTk):
 
     def _init_views(self):
         """Инициализирует все представления"""
-        self.notes_view = NotesView(
-            self.content_frame,
-            show_add_note=self.show_add_note
-        )
-        self.add_note_view = Add_Note(
-            self.content_frame,
-            on_note_added=self.on_note_added
-        )
-        self.manage_notes_view = ManageNotes(
-            self.content_frame,
-            on_update=self.on_notes_updated,
-            on_add_note=self.show_add_note
-        )
+        # Изначально никаких представлений нет
+        self.current_view = None
+        self.notes_view = None
+        self.add_note_view = None
+        self.manage_notes_view = None
+        self.emotion_wheel_view = None
 
     # Остальные методы остаются без изменений...
     def center_window(self):
@@ -140,80 +150,136 @@ class MainWindow(ctk.CTk):
         """Переключает тему между светлой и темной"""
         self.current_theme_name = "dark" if self.current_theme_name == "light" else "light"
         set_theme(self.current_theme_name)
-
-        # Обновляем иконку кнопки темы
+        self.settings_manager.set('theme', self.current_theme_name)
+        
+        # Обновляем иконку кнопки темы с анимацией
         self.theme_toggle_btn.configure(
             text="🌙" if self.current_theme_name == "light" else "☀️"
         )
-
-        # Обновляем основные цвета
+        self.animation_manager.scale_in(self.theme_toggle_btn, duration=0.2)
+        
+        # Обновляем все элементы сразу
+        self.on_theme_changed()
+    
+    def on_theme_changed(self):
+        """Обработчик изменения темы через ThemeManager"""
+        # Обновляем основные цвета - ГЛАВНОЕ ОКНО!
         self.configure(fg_color=get_color("COLOR_BG"))
-        self.buttons_frame.configure(fg_color=get_color("COLOR_FRAME_BG"))
-        self.content_frame.configure(fg_color=get_color("COLOR_FRAME_BG"))
+        
+        # Обновляем фреймы
+        if hasattr(self, 'buttons_frame'):
+            self.buttons_frame.configure(fg_color=get_color("COLOR_FRAME_BG"))
+        if hasattr(self, 'content_frame'):
+            self.content_frame.configure(fg_color=get_color("COLOR_FRAME_BG"))
 
         # Обновляем заголовок
-        self.title_label.configure(
-            text_color=get_color("COLOR_TEXT"),
-            font=get_font("FONT_TITLE")
-        )
+        if hasattr(self, 'title_label'):
+            self.title_label.configure(
+                text_color=get_color("COLOR_TEXT"),
+                font=get_font("FONT_TITLE")
+            )
 
         # Обновляем кнопки
-        buttons = [
-            self.btn_show_notes,
-            self.btn_manage_notes,
-            self.theme_toggle_btn,
-            self.exit_button,
-            self.btn_assistant
-        ]
-
+        buttons = []
+        if hasattr(self, 'btn_show_notes'): buttons.append(self.btn_show_notes)
+        if hasattr(self, 'btn_manage_notes'): buttons.append(self.btn_manage_notes)
+        if hasattr(self, 'btn_emotion_wheel'): buttons.append(self.btn_emotion_wheel)
+        if hasattr(self, 'theme_toggle_btn'): buttons.append(self.theme_toggle_btn)
+        if hasattr(self, 'exit_button'): buttons.append(self.exit_button)
+        
         for btn in buttons:
-            btn.update_theme()
+            if hasattr(btn, 'update_theme'):
+                btn.update_theme()
 
-        # Обновляем представления
-        self.notes_view.update_theme()
-        self.add_note_view.update_theme()
-        self.manage_notes_view.update_theme()
-        self.assistant_view.update_theme()
+        # Обновляем текущее представление
+        if self.current_view and hasattr(self.current_view, 'update_theme'):
+            self.current_view.update_theme()
+            
+        # Принудительно обновляем отображение
+        self.update()
 
     def clear_content(self):
         """Очищает область контента"""
+        # Уничтожаем все дочерние виджеты
         for widget in self.content_frame.winfo_children():
-            widget.pack_forget()
+            widget.destroy()
+        self.current_view = None
 
     def show_notes(self):
         """Показывает представление с заметками"""
         self.clear_content()
+        self.notes_view = NotesView(
+            self.content_frame,
+            show_add_note=self.show_add_note
+        )
         self.notes_view.pack(fill="both", expand=True, padx=10, pady=10)
+        self.current_view = self.notes_view
+        if self.settings_manager.get('animations_enabled', True):
+            self.animation_manager.fade_in(self.notes_view, duration=0.3)
 
     def show_add_note(self):
         """Показывает форму добавления заметки"""
         self.clear_content()
+        self.add_note_view = Add_Note(
+            self.content_frame,
+            on_note_added=self.on_note_added
+        )
         self.add_note_view.pack(fill="both", expand=True, padx=10, pady=10)
+        self.current_view = self.add_note_view
+        if self.settings_manager.get('animations_enabled', True):
+            self.animation_manager.slide_in(self.add_note_view, direction="right", duration=0.3)
 
     def on_note_added(self):
         """Обработчик добавления новой заметки"""
-        self.notes_view.refresh_notes()
-        self.add_note_view.notes = self.notes_view.notes
-        self.manage_notes_view.refresh()
-        self.show_manage_notes()
-        self.manage_notes_view.status_label.configure(
-            text="Заметка добавлена! Выберите категорию для управления.",
-            text_color=get_color("COLOR_SUCCESS")
-        )
+        # Переходим к просмотру заметок
+        self.show_notes()
+        # Показываем уведомление об успехе
+        if self.notes_view and hasattr(self.notes_view, 'note_text'):
+            self.notes_view.note_text.configure(
+                text="✅ Заметка успешно добавлена! Нажмите кнопку, чтобы увидеть случайную заметку.",
+                text_color=get_color("COLOR_SUCCESS")
+            )
 
     def show_manage_notes(self):
         """Показывает представление управления заметками"""
         self.clear_content()
+        self.manage_notes_view = ManageNotes(
+            self.content_frame,
+            on_update=self.on_notes_updated,
+            on_add_note=self.show_add_note
+        )
         self.manage_notes_view.pack(fill="both", expand=True, padx=10, pady=10)
+        self.current_view = self.manage_notes_view
         self.manage_notes_view.refresh()
+        if self.settings_manager.get('animations_enabled', True):
+            self.animation_manager.slide_in(self.manage_notes_view, direction="left", duration=0.3)
 
     def on_notes_updated(self):
         """Обработчик обновления заметок"""
-        self.notes_view.refresh_notes()
-        self.add_note_view.notes = self.notes_view.notes
-        self.show_notes()
+        # Просто обновляем текущее представление
+        if self.manage_notes_view and hasattr(self.manage_notes_view, 'refresh'):
+            self.manage_notes_view.refresh()
 
-    def show_assistant(self):
-        """Показывает интерфейс ассистента"""
+    def show_emotion_wheel(self):
+        """Показывает колесо эмоций"""
+        from ui.views.emotion_wheel_view import EmotionWheelView
+        
         self.clear_content()
-        self.assistant_view.pack(fill="both", expand=True, padx=10, pady=10)
+        self.emotion_wheel_view = EmotionWheelView(self.content_frame)
+        self.emotion_wheel_view.pack(fill="both", expand=True, padx=10, pady=10)
+        self.current_view = self.emotion_wheel_view
+        if self.settings_manager.get('animations_enabled', True):
+            self.animation_manager.fade_in(self.emotion_wheel_view, duration=0.3)
+
+
+    
+    def on_exit(self):
+        """Обработчик выхода с сохранением настроек"""
+        # Сохраняем размеры окна
+        self.settings_manager.set('window_width', self.winfo_width())
+        self.settings_manager.set('window_height', self.winfo_height())
+        
+        # Очищаем наблюдателей
+        ThemeManager.remove_observer(self.on_theme_changed)
+        
+        self.destroy()

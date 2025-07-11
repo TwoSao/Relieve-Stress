@@ -1,0 +1,19 @@
+<svg width="600" height="400" viewBox="0 0 600 400" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#667eea;stop-opacity:0.1" />
+      <stop offset="100%" style="stop-color:#764ba2;stop-opacity:0.1" />
+    </linearGradient>
+  </defs>
+  <rect width="600" height="400" fill="url(#bgGrad)"/>
+  
+  <!-- Декоративные элементы -->
+  <circle cx="100" cy="80" r="30" fill="#FFE66D" opacity="0.2"/>
+  <circle cx="500" cy="120" r="25" fill="#4ECDC4" opacity="0.2"/>
+  <circle cx="80" cy="300" r="20" fill="#FF6B6B" opacity="0.2"/>
+  <circle cx="520" cy="320" r="35" fill="#A8E6CF" opacity="0.2"/>
+  
+  <!-- Волны -->
+  <path d="M0,200 Q150,150 300,200 T600,200 L600,400 L0,400 Z" fill="#95E1D3" opacity="0.1"/>
+  <path d="M0,250 Q150,200 300,250 T600,250 L600,400 L0,400 Z" fill="#D4A5A5" opacity="0.1"/>
+</svg>

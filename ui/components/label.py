@@ -6,5 +6,11 @@ class Label(ctk.CTkLabel):
         if "text_color" not in kwargs:
             kwargs["text_color"] = get_color("COLOR_TEXT")
         if "font" not in kwargs:
-            kwargs["font"] = get_font("FONT_MAIN")
+            kwargs["font"] = get_font("FONT_NORMAL")
         super().__init__(master, **kwargs)
+    
+    def update_theme(self):
+        self.configure(
+            text_color=get_color("COLOR_TEXT"),
+            font=get_font("FONT_NORMAL")
+        )

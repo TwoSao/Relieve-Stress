@@ -1,134 +1,162 @@
-import json
 import random
-import customtkinter as ctk
+from ui.views.base_view import BaseView
+from ui.widgets.enhanced_button import EnhancedButton
+from ui.widgets.note_card import NoteCard
 from ui.components.label import Label
-from ui.components.buttons import Button
 from ui.components.frame import Frame
 from ui.style import get_color, get_font
+from core.services.note_service import NoteService
+from ui.animations.transitions import AnimationManager
+import customtkinter as ctk
 
-class NotesView(Frame):
-    def __init__(self, master, notes_file="data/notes.json", show_add_note=None, **kwargs):
-        super().__init__(master, **kwargs)
-        self.notes_file = notes_file
-        self.notes = self.load_notes()
-        self.filtered_notes = self.notes.copy()
+class NotesView(BaseView):
+    def __init__(self, master, show_add_note=None, **kwargs):
+        self.note_service = NoteService()
         self.show_add_note = show_add_note
+        self.active_category = "Все"
+        self.current_note = None
+        super().__init__(master, **kwargs)
 
-        # Настройка основного фрейма
+    def setup_ui(self):
         self.configure(fg_color=get_color("COLOR_FRAME_BG"))
 
-        # Панель управления
-        self.control_buttons_frame = Frame(self, fg_color=get_color("COLOR_FRAME_BG"))
-        self.control_buttons_frame.pack(fill="x", pady=(0, 10))
-
+        # Заголовок
+        self.title_label = Label(
+            self,
+            text="Заметки для снятия стресса",
+            font=get_font("FONT_TITLE"),
+            text_color=get_color("COLOR_TEXT")
+        )
+        self.title_label.pack(pady=20)
 
         # Панель категорий
-        self.category_buttons_frame = Frame(self, fg_color=get_color("COLOR_FRAME_BG"))
-        self.category_buttons_frame.pack(fill="x", pady=(0, 15))
+        self.category_frame = Frame(self, fg_color="transparent")
+        self.category_frame.pack(fill="x", padx=20, pady=10)
 
-        # Кнопки категорий
-        self.categories = ["Все", "Поддержка", "Мотивация", "Отвлечение"]
-        self.active_category = "Все"
-
-        for cat in self.categories:
-            btn = Button(
-                self.category_buttons_frame,
+        categories = ["Все"] + self.note_service.get_categories()
+        self.category_buttons = []
+        
+        for cat in categories:
+            btn = EnhancedButton(
+                self.category_frame,
                 text=cat,
-                command=lambda c=cat: self.filter_notes_by_category(c),
-                fg_color=get_color("COLOR_ACCENT") if cat == self.active_category else get_color("COLOR_BUTTON_BG")
+                command=lambda c=cat: self.filter_by_category(c),
+                fg_color=get_color("COLOR_ACCENT") if cat == self.active_category else get_color("COLOR_BUTTON_BG"),
+                hover_animation=True
             )
             btn.pack(side="left", padx=5, expand=True, fill="x")
+            self.category_buttons.append(btn)
 
-        # Отображение заметки
-        self.note_frame = Frame(self, fg_color=get_color("COLOR_FRAME_BG"), corner_radius=8)
-        self.note_frame.pack(fill="both", expand=True, padx=10, pady=10)
-
-        self.note_display = Label(
-            self.note_frame,
-            text="Нажмите кнопку, чтобы показать случайную заметку",
-            wraplength=400,
-            font=get_font("FONT_NORMAL"),
-            text_color=get_color("COLOR_TEXT_SECONDARY")
-        )
-        self.note_display.pack(pady=20, padx=20)
-
-        # Кнопка показа заметки
-        self.show_button = Button(
+        # Область отображения заметки
+        self.note_display_frame = Frame(
             self,
-            text="Показать случайную заметку",
-            command=self.show_random_note,
-            fg_color=get_color("COLOR_BUTTON_BG"),
-            hover_color=get_color("COLOR_BUTTON_HOVER")
+            fg_color=get_color("COLOR_FRAME_BG"),
+            corner_radius=12,
+            border_width=2,
+            border_color=get_color("COLOR_DIVIDER")
         )
-        self.show_button.pack(pady=10, padx=10, fill="x")
+        self.note_display_frame.pack(fill="both", expand=True, padx=20, pady=20)
 
-    def load_notes(self):
-        """Загружает заметки из JSON-файла"""
-        try:
-            with open(self.notes_file, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            return []
-        except Exception as e:
-            print(f"Ошибка загрузки заметок: {e}")
-            return []
+        self.note_text = Label(
+            self.note_display_frame,
+            text="Нажмите кнопку, чтобы показать случайную заметку",
+            wraplength=500,
+            font=get_font("FONT_SUBTITLE"),
+            text_color=get_color("COLOR_TEXT_SECONDARY"),
+            justify="center"
+        )
+        self.note_text.pack(expand=True, pady=40, padx=30)
 
-    def refresh_notes(self):
-        """Обновляет список заметок"""
-        self.notes = self.load_notes()
-        self.filtered_notes = self.notes.copy()
-        self.show_random_note()
+        # Кнопки управления
+        self.buttons_frame = Frame(self, fg_color="transparent")
+        self.buttons_frame.pack(fill="x", padx=20, pady=10)
+
+        self.show_note_btn = EnhancedButton(
+            self.buttons_frame,
+            text="✨ Показать заметку",
+            command=self.show_random_note,
+            fg_color=get_color("COLOR_ACCENT"),
+            hover_animation=True,
+            height=40
+        )
+        self.show_note_btn.pack(side="left", padx=10, expand=True, fill="x")
+
+        if self.show_add_note:
+            self.add_note_btn = EnhancedButton(
+                self.buttons_frame,
+                text="➕ Добавить заметку",
+                command=self.show_add_note,
+                fg_color=get_color("COLOR_SUCCESS"),
+                hover_animation=True,
+                height=40
+            )
+            self.add_note_btn.pack(side="right", padx=10)
+
+    def filter_by_category(self, category):
+        self.active_category = category
+        
+        # Обновляем кнопки категорий
+        for btn in self.category_buttons:
+            is_active = btn.cget("text") == category
+            btn.configure(
+                fg_color=get_color("COLOR_ACCENT") if is_active else get_color("COLOR_BUTTON_BG")
+            )
+            if is_active:
+                AnimationManager.scale_in(btn, duration=0.2)
 
     def show_random_note(self):
-        """Показывает случайную заметку из выбранной категории"""
-        if not self.filtered_notes:
-            self.note_display.configure(
-                text="Нет заметок в выбранной категории.",
+        category = None if self.active_category == "Все" else self.active_category
+        notes = self.note_service.get_notes(category)
+        
+        if not notes:
+            self.note_text.configure(
+                text="Нет заметок в выбранной категории.\nДобавьте новую заметку!",
                 text_color=get_color("COLOR_TEXT_SECONDARY")
             )
             return
-
-        note = random.choice(self.filtered_notes)
-        self.note_display.configure(
-            text=note["text"],
+        
+        self.current_note = random.choice(notes)
+        self.note_text.configure(
+            text=self.current_note.text,
             text_color=get_color("COLOR_TEXT"),
-            font=get_font("FONT_NORMAL")
+            font=get_font("FONT_SUBTITLE")
         )
+        
+        # Анимация появления
+        AnimationManager.fade_in(self.note_display_frame, duration=0.4)
 
-    def filter_notes_by_category(self, category):
-        """Фильтрует заметки по категории"""
-        self.active_category = category
-
-        # Обновляем стиль кнопок категорий
-        for btn in self.category_buttons_frame.winfo_children():
-            btn.configure(
-                fg_color=get_color("COLOR_ACCENT") if btn.cget("text") == category else get_color("COLOR_BUTTON_BG")
-            )
-
-        if category == "Все":
-            self.filtered_notes = self.notes.copy()
-        else:
-            self.filtered_notes = [note for note in self.notes if note.get("category") == category]
-
-        self.show_random_note()
+    def refresh_notes(self):
+        self.note_service.load_notes()
+        # Обновляем категории
+        categories = ["Все"] + self.note_service.get_categories()
+        # Можно добавить логику обновления кнопок категорий
 
     def update_theme(self):
-        """Обновляет цвета при смене темы"""
         self.configure(fg_color=get_color("COLOR_FRAME_BG"))
-        self.control_buttons_frame.configure(fg_color=get_color("COLOR_FRAME_BG"))
-        self.category_buttons_frame.configure(fg_color=get_color("COLOR_FRAME_BG"))
-        self.note_frame.configure(fg_color=get_color("COLOR_FRAME_BG"))
-
-        self.note_display.configure(
+        
+        self.title_label.configure(
             text_color=get_color("COLOR_TEXT"),
-            font=get_font("FONT_NORMAL")
+            font=get_font("FONT_TITLE")
         )
-
-        self.show_button.update_theme()
-
-        # Обновляем кнопки категорий
-        for btn in self.category_buttons_frame.winfo_children():
+        
+        self.note_display_frame.configure(
+            fg_color=get_color("COLOR_FRAME_BG"),
+            border_color=get_color("COLOR_DIVIDER")
+        )
+        
+        self.note_text.configure(
+            text_color=get_color("COLOR_TEXT"),
+            font=get_font("FONT_SUBTITLE")
+        )
+        
+        # Обновляем кнопки
+        for btn in self.category_buttons:
+            btn.update_theme()
+            is_active = btn.cget("text") == self.active_category
             btn.configure(
-                fg_color=get_color("COLOR_ACCENT") if btn.cget("text") == self.active_category else get_color("COLOR_BUTTON_BG"),
-                text_color=get_color("COLOR_TEXT")
+                fg_color=get_color("COLOR_ACCENT") if is_active else get_color("COLOR_BUTTON_BG")
             )
+        
+        self.show_note_btn.update_theme()
+        if hasattr(self, 'add_note_btn'):
+            self.add_note_btn.update_theme()
