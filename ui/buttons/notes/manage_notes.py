@@ -2,6 +2,7 @@ import customtkinter as ctk
 from ui.views.base_view import BaseView
 from ui.widgets.enhanced_button import EnhancedButton
 from ui.widgets.note_card import NoteCard
+from ui.widgets.navigation_bar import NavigationBar
 from ui.components.label import Label
 from ui.components.frame import Frame
 from ui.style import get_color, get_font
@@ -9,10 +10,12 @@ from core.services.note_service import NoteService
 from ui.animations.transitions import AnimationManager
 
 class ManageNotes(BaseView):
-    def __init__(self, master, on_update=None, on_add_note=None, **kwargs):
+    def __init__(self, master, on_update=None, on_add_note=None, on_back=None, on_home=None, **kwargs):
         self.note_service = NoteService()
         self.on_update = on_update
         self.on_add_note = on_add_note
+        self.on_back = on_back
+        self.on_home = on_home
         self.selected_category = None
         self.current_edit_note_id = None
         super().__init__(master, **kwargs)
@@ -20,14 +23,15 @@ class ManageNotes(BaseView):
     def setup_ui(self):
         self.configure(fg_color=get_color("COLOR_FRAME_BG"))
 
-        # Заголовок
-        self.title_label = Label(
-            self,
-            text="🛠️ Управление заметками",
-            font=get_font("FONT_TITLE"),
-            text_color=get_color("COLOR_TEXT")
-        )
-        self.title_label.pack(pady=20)
+        # Панель навигации
+        if self.on_back or self.on_home:
+            self.nav_bar = NavigationBar(
+                self,
+                title="🛠️ Управление заметками",
+                on_back=self.on_back,
+                on_home=self.on_home
+            )
+            self.nav_bar.pack(fill="x", padx=20, pady=(10, 0))
 
         # Панель действий
         self.actions_frame = Frame(self, fg_color="transparent")
@@ -74,8 +78,8 @@ class ManageNotes(BaseView):
         # Область прокрутки для заметок
         self.scrollable_frame = ctk.CTkScrollableFrame(
             self,
-            fg_color=get_color("COLOR_BG"),
-            corner_radius=12
+            fg_color=get_color("COLOR_FRAME_BG"),
+            corner_radius=0
         )
         self.scrollable_frame.pack(fill="both", expand=True, padx=20, pady=20)
 
@@ -107,6 +111,9 @@ class ManageNotes(BaseView):
             corner_radius=8
         )
         self.edit_textbox.pack(padx=20, pady=10, fill="both", expand=True)
+        self.edit_textbox.bind("<Control-v>", self.on_paste)
+        self.edit_textbox.bind("<Control-c>", self.on_copy)
+        self.edit_textbox.bind("<Control-a>", self.on_select_all)
         
         self.edit_buttons_frame = Frame(self.edit_frame, fg_color="transparent")
         self.edit_buttons_frame.pack(fill="x", padx=20, pady=15)
@@ -237,7 +244,7 @@ class ManageNotes(BaseView):
         self.edit_textbox.delete("0.0", "end")
         self.edit_textbox.insert("0.0", note.text)
         self.edit_frame.pack(fill="x", padx=20, pady=10)
-        AnimationManager.slide_in(self.edit_frame, direction="right", duration=0.3)
+        AnimationManager.slide_in(self.edit_frame, direction="right", duration=0.1)
         
         self.status_label.configure(
             text="Редактирование заметки...",
@@ -264,7 +271,11 @@ class ManageNotes(BaseView):
                 break
         
         self.note_service.save_notes()
+        
+        # Сначала скрываем окно редактирования
         self.cancel_edit()
+        
+        # Затем обновляем список заметок
         self.show_notes_for_category(self.selected_category)
         
         self.status_label.configure(
@@ -274,10 +285,37 @@ class ManageNotes(BaseView):
         
         if self.on_update:
             self.on_update()
+    
+    def on_paste(self, event):
+        """Ctrl+V - вставка."""
+        try:
+            clipboard_text = self.clipboard_get()
+            self.edit_textbox.insert("insert", clipboard_text)
+        except:
+            pass
+        return "break"
+    
+    def on_copy(self, event):
+        """Ctrl+C - копирование."""
+        try:
+            selected_text = self.edit_textbox.selection_get()
+            self.clipboard_clear()
+            self.clipboard_append(selected_text)
+        except:
+            pass
+        return "break"
+    
+    def on_select_all(self, event):
+        """Ctrl+A - выделить все."""
+        self.edit_textbox.tag_add("sel", "1.0", "end")
+        return "break"
 
     def cancel_edit(self):
+        # Полностью скрываем фрейм редактирования
         self.edit_frame.pack_forget()
+        self.edit_frame.place_forget()
         self.current_edit_note_id = None
+        self.edit_textbox.delete("0.0", "end")
         self.status_label.configure(
             text=f"Категория: {self.selected_category}" if self.selected_category else "",
             text_color=get_color("COLOR_TEXT_SECONDARY")
@@ -314,17 +352,22 @@ class ManageNotes(BaseView):
     def update_theme(self):
         self.configure(fg_color=get_color("COLOR_FRAME_BG"))
         
-        self.title_label.configure(
-            text_color=get_color("COLOR_TEXT"),
-            font=get_font("FONT_TITLE")
-        )
+        # Обновляем навигацию
+        if hasattr(self, 'nav_bar'):
+            self.nav_bar.update_theme()
+        
+        if hasattr(self, 'title_label'):
+            self.title_label.configure(
+                text_color=get_color("COLOR_TEXT"),
+                font=get_font("FONT_TITLE")
+            )
         
         self.category_label.configure(
             text_color=get_color("COLOR_TEXT"),
             font=get_font("FONT_SUBTITLE")
         )
         
-        self.scrollable_frame.configure(fg_color=get_color("COLOR_BG"))
+        self.scrollable_frame.configure(fg_color=get_color("COLOR_FRAME_BG"))
         
         self.edit_frame.configure(
             fg_color=get_color("COLOR_FRAME_BG"),

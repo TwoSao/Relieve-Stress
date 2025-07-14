@@ -1,8 +1,8 @@
 {
   "theme": "dark",
-  "window_width": 875,
-  "window_height": 1062,
+  "window_width": 1125,
+  "window_height": 812,
   "animations_enabled": true,
   "auto_save": true,
-  "ai_api_key": ""
+  "groq_api_key": "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"
 }

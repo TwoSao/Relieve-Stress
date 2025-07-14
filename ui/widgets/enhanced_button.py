@@ -59,17 +59,21 @@ class EnhancedButton(ctk.CTkButton):
     def _on_hover_enter(self, event) -> None:
         """Обработчик наведения мыши."""
         if self.hover_animation and self.cget('state') != 'disabled':
-            AnimationManager.scale_in(self, duration=0.1, scale_from=1.0, scale_to=1.05)
+            # Простое изменение цвета вместо анимации
+            self.configure(corner_radius=10)
     
     def _on_hover_leave(self, event) -> None:
         """Обработчик ухода мыши."""
         if self.hover_animation and self.cget('state') != 'disabled':
-            AnimationManager.scale_in(self, duration=0.1, scale_from=1.05, scale_to=1.0)
+            self.configure(corner_radius=8)
     
     def _enhanced_command(self) -> None:
-        """Улучшенная команда с анимацией."""
+        """Улучшенная команда с минимальным эффектом."""
         if self.pulse_on_click:
-            AnimationManager.pulse(self, duration=0.3, pulses=1)
+            # Простой эффект нажатия
+            original_radius = self.cget('corner_radius')
+            self.configure(corner_radius=6)
+            self.after(50, lambda: self.configure(corner_radius=original_radius))
         
         if self._original_command:
             try:
@@ -89,10 +93,9 @@ class EnhancedButton(ctk.CTkButton):
     def set_loading(self, loading: bool = True) -> None:
         """Устанавливает состояние загрузки."""
         if loading:
-            self.configure(state='disabled', text='Загрузка...')
-            AnimationManager.pulse(self, duration=2.0, pulses=10)
+            self.configure(state='disabled', text='Загрузка...', corner_radius=6)
         else:
-            self.configure(state='normal')
+            self.configure(state='normal', corner_radius=8)
     
     def flash_success(self) -> None:
         """Мигание зелёным цветом (успех)."""

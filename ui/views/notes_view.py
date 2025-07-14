@@ -50,7 +50,8 @@ class NotesView(BaseView):
         # Область прокрутки для заметок
         self.scrollable_frame = ctk.CTkScrollableFrame(
             self,
-            fg_color=get_color("COLOR_BG")
+            fg_color=get_color("COLOR_FRAME_BG"),
+            corner_radius=0
         )
         self.scrollable_frame.pack(fill="both", expand=True, padx=20, pady=10)
         
@@ -107,5 +108,5 @@ class NotesView(BaseView):
             text_color=get_color("COLOR_TEXT"),
             font=get_font("FONT_TITLE")
         )
-        self.scrollable_frame.configure(fg_color=get_color("COLOR_BG"))
+        self.scrollable_frame.configure(fg_color=get_color("COLOR_FRAME_BG"))
         self.add_btn.update_theme()

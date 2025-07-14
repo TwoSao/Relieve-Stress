@@ -2,6 +2,8 @@ import random
 from ui.views.base_view import BaseView
 from ui.widgets.enhanced_button import EnhancedButton
 from ui.widgets.note_card import NoteCard
+from ui.widgets.quick_access_panel import QuickAccessPanel
+from ui.widgets.motivation_widget import MotivationWidget
 from ui.components.label import Label
 from ui.components.frame import Frame
 from ui.style import get_color, get_font
@@ -20,18 +22,25 @@ class NotesView(BaseView):
     def setup_ui(self):
         self.configure(fg_color=get_color("COLOR_FRAME_BG"))
 
+        # Панель быстрого доступа
+        self.quick_panel = QuickAccessPanel(
+            self,
+            on_add_note=self.show_add_note
+        )
+        self.quick_panel.pack(fill="x", padx=15, pady=(5, 0))
+
         # Заголовок
         self.title_label = Label(
             self,
-            text="Заметки для снятия стресса",
+            text="📚 Заметки для снятия стресса",
             font=get_font("FONT_TITLE"),
             text_color=get_color("COLOR_TEXT")
         )
-        self.title_label.pack(pady=20)
+        self.title_label.pack(pady=(15, 8))
 
         # Панель категорий
         self.category_frame = Frame(self, fg_color="transparent")
-        self.category_frame.pack(fill="x", padx=20, pady=10)
+        self.category_frame.pack(fill="x", padx=15, pady=8)
 
         categories = ["Все"] + self.note_service.get_categories()
         self.category_buttons = []
@@ -44,18 +53,18 @@ class NotesView(BaseView):
                 fg_color=get_color("COLOR_ACCENT") if cat == self.active_category else get_color("COLOR_BUTTON_BG"),
                 hover_animation=True
             )
-            btn.pack(side="left", padx=5, expand=True, fill="x")
+            btn.pack(side="left", padx=3, expand=True, fill="x")
             self.category_buttons.append(btn)
 
         # Область отображения заметки
         self.note_display_frame = Frame(
             self,
             fg_color=get_color("COLOR_FRAME_BG"),
-            corner_radius=12,
+            corner_radius=0,
             border_width=2,
             border_color=get_color("COLOR_DIVIDER")
         )
-        self.note_display_frame.pack(fill="both", expand=True, padx=20, pady=20)
+        self.note_display_frame.pack(fill="both", expand=True, padx=15, pady=15)
 
         self.note_text = Label(
             self.note_display_frame,
@@ -65,11 +74,19 @@ class NotesView(BaseView):
             text_color=get_color("COLOR_TEXT_SECONDARY"),
             justify="center"
         )
-        self.note_text.pack(expand=True, pady=40, padx=30)
+        self.note_text.pack(expand=True, pady=30, padx=20)
 
+        # Нижняя панель с кнопками и мотивацией
+        bottom_frame = Frame(self, fg_color="transparent")
+        bottom_frame.pack(fill="x", padx=15, pady=8)
+        
         # Кнопки управления
-        self.buttons_frame = Frame(self, fg_color="transparent")
-        self.buttons_frame.pack(fill="x", padx=20, pady=10)
+        self.buttons_frame = Frame(bottom_frame, fg_color="transparent")
+        self.buttons_frame.pack(side="left", fill="x", expand=True)
+        
+        # Мотивационный виджет
+        self.motivation_widget = MotivationWidget(bottom_frame)
+        self.motivation_widget.pack(side="right", padx=(15, 0))
 
         self.show_note_btn = EnhancedButton(
             self.buttons_frame,
@@ -79,7 +96,7 @@ class NotesView(BaseView):
             hover_animation=True,
             height=40
         )
-        self.show_note_btn.pack(side="left", padx=10, expand=True, fill="x")
+        self.show_note_btn.pack(side="left", padx=5, expand=True, fill="x")
 
         if self.show_add_note:
             self.add_note_btn = EnhancedButton(
@@ -90,7 +107,7 @@ class NotesView(BaseView):
                 hover_animation=True,
                 height=40
             )
-            self.add_note_btn.pack(side="right", padx=10)
+            self.add_note_btn.pack(side="right", padx=5)
 
     def filter_by_category(self, category):
         self.active_category = category
@@ -134,6 +151,10 @@ class NotesView(BaseView):
     def update_theme(self):
         self.configure(fg_color=get_color("COLOR_FRAME_BG"))
         
+        # Обновляем панель быстрого доступа
+        if hasattr(self, 'quick_panel'):
+            self.quick_panel.update_theme()
+        
         self.title_label.configure(
             text_color=get_color("COLOR_TEXT"),
             font=get_font("FONT_TITLE")
@@ -160,3 +181,7 @@ class NotesView(BaseView):
         self.show_note_btn.update_theme()
         if hasattr(self, 'add_note_btn'):
             self.add_note_btn.update_theme()
+        
+        # Обновляем мотивационный виджет
+        if hasattr(self, 'motivation_widget'):
+            self.motivation_widget.update_theme()

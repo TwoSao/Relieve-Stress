@@ -13,10 +13,11 @@ from pathlib import Path
 class AppSettings:
     """Класс для хранения настроек приложения."""
     theme: str = "light"                    # Тема оформления
-    window_width: int = 1200                # Ширина окна
-    window_height: int = 960                # Высота окна
-    animations_enabled: bool = True         # Включены ли анимации
+    window_width: int = 900                 # Ширина окна
+    window_height: int = 650                # Высота окна
+    animations_enabled: bool = False        # Отключены для производительности
     auto_save: bool = True                  # Автосохранение
+    groq_api_key: str = ""                  # API ключ Groq для AI ассистента
     
     def to_dict(self) -> Dict[str, Any]:
         """Преобразует настройки в словарь."""
@@ -38,6 +39,7 @@ class SettingsManager:
         self.config_file = Path(config_file)
         self.config_file.parent.mkdir(exist_ok=True)
         self.settings = AppSettings()
+        self._save_pending = False  # Оптимизация: отложенное сохранение
         self.load_settings()
     
     def load_settings(self) -> None:
@@ -66,14 +68,36 @@ class SettingsManager:
         return getattr(self.settings, key, default)
     
     def set(self, key: str, value: Any) -> None:
-        """Устанавливает значение настройки и сохраняет её."""
+        """Оптимизированное установка значения настройки."""
         if hasattr(self.settings, key):
-            setattr(self.settings, key, value)
-            self.save_settings()
+            old_value = getattr(self.settings, key)
+            if old_value != value:  # Сохраняем только при изменении
+                setattr(self.settings, key, value)
+                self._delayed_save()
         else:
             print(f"Неизвестная настройка: {key}")
+    
+    def _delayed_save(self) -> None:
+        """Отложенное сохранение для производительности."""
+        if not self._save_pending:
+            self._save_pending = True
+            # Отлагаем сохранение на 500мс для батчинга
+            import threading
+            threading.Timer(0.5, self._perform_save).start()
+    
+    def _perform_save(self) -> None:
+        """Выполняет фактическое сохранение."""
+        self._save_pending = False
+        self.save_settings()
     
     def reset_to_defaults(self) -> None:
         """Сбрасывает настройки к значениям по умолчанию."""
         self.settings = AppSettings()
         self.save_settings()
+    
+    def force_save(self) -> None:
+        """Принудительное сохранение (например, при выходе)."""
+        if self._save_pending:
+            self._perform_save()
+        else:
+            self.save_settings()
